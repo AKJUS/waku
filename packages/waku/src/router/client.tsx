@@ -109,6 +109,20 @@ const shouldScrollByDefault = (url: URL) =>
   url.pathname !== window.location.pathname ||
   url.hash !== window.location.hash;
 
+const isPathChange = (next: RouteProps, prev: RouteProps) =>
+  next.path !== prev.path;
+
+const isHashChange = (next: RouteProps, prev: RouteProps) =>
+  next.hash !== prev.hash;
+
+const isSameRoute = (next: RouteProps, prev: RouteProps) =>
+  next.path === prev.path &&
+  next.query === prev.query &&
+  next.hash === prev.hash;
+
+const shouldScrollForRouteChange = (next: RouteProps, prev: RouteProps) =>
+  isPathChange(next, prev) || isHashChange(next, prev);
+
 const isAltClick = (event: MouseEvent<HTMLAnchorElement>) =>
   event.button !== 0 ||
   !!(event.metaKey || event.altKey || event.ctrlKey || event.shiftKey);
@@ -361,28 +375,28 @@ export function Link({
   const [ref, setRef] = useSharedRef<HTMLAnchorElement>(refProp);
 
   useEffect(() => {
-    if (unstable_prefetchOnView && ref.current) {
-      const observer = new IntersectionObserver(
-        (entries) => {
-          entries.forEach((entry) => {
-            if (entry.isIntersecting) {
-              const url = new URL(to, window.location.href);
-              if (router && url.href !== window.location.href) {
-                const route = parseRoute(url);
-                router.prefetchRoute(route);
-              }
-            }
-          });
-        },
-        { threshold: 0.1 },
-      );
-
-      observer.observe(ref.current);
-
-      return () => {
-        observer.disconnect();
-      };
+    if (!unstable_prefetchOnView || !ref.current) {
+      return;
     }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const url = new URL(to, window.location.href);
+            if (router && url.href !== window.location.href) {
+              router.prefetchRoute(parseRoute(url));
+            }
+          }
+        });
+      },
+      { threshold: 0.1 },
+    );
+
+    observer.observe(ref.current);
+
+    return () => {
+      observer.disconnect();
+    };
   }, [unstable_prefetchOnView, router, to, ref]);
   const internalOnClick = () => {
     const url = new URL(to, window.location.href);
@@ -401,30 +415,26 @@ export function Link({
     }
   };
   const onClick = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (props.onClick) {
-      props.onClick(event);
+    props.onClick?.(event);
+    if (event.defaultPrevented || isAltClick(event)) {
+      return;
     }
-    if (!event.defaultPrevented && !isAltClick(event)) {
-      if (props.target && props.target.toLowerCase() !== '_self') {
-        console.warn(
-          '[Link] `target` is discouraged. Use `<a>` for this case.',
-        );
-      }
-      if (props.download != null && props.download !== false) {
-        console.warn(
-          '[Link] `download` is discouraged. Use `<a>` for this case.',
-        );
-      }
-      event.preventDefault();
-      internalOnClick();
+    if (props.target && props.target.toLowerCase() !== '_self') {
+      console.warn('[Link] `target` is discouraged. Use `<a>` for this case.');
     }
+    if (props.download != null && props.download !== false) {
+      console.warn(
+        '[Link] `download` is discouraged. Use `<a>` for this case.',
+      );
+    }
+    event.preventDefault();
+    internalOnClick();
   };
   const onMouseEnter = unstable_prefetchOnEnter
     ? (event: MouseEvent<HTMLAnchorElement>) => {
         const url = new URL(to, window.location.href);
         if (url.href !== window.location.href) {
-          const route = parseRoute(url);
-          prefetchRoute(route);
+          prefetchRoute(parseRoute(url));
         }
         props.onMouseEnter?.(event);
       }
@@ -762,6 +772,8 @@ const InnerRouter = ({
   const requestedRouteRef = useRef<RouteProps>(initialRoute);
   const staticPathSetRef = useRef(new Set<string>());
   const cachedIdSetRef = useRef(new Set<string>());
+  // FIXME this "fetchingSlices" hack feels suboptimal.
+  const fetchingSlicesRef = useRef(new Set<SliceId>());
   useEffect(() => {
     elementsPromise.then(
       (elements) => {
@@ -858,18 +870,9 @@ const InnerRouter = ({
   }
   // Update the route post-load to include the current hash.
   useEffect(() => {
-    setRoute((prev) => {
-      if (
-        prev.path === initialRoute.path &&
-        prev.query === initialRoute.query &&
-        prev.hash === initialRoute.hash
-      ) {
-        return prev;
-      }
-      return initialRoute;
-    });
+    setRoute((prev) => (isSameRoute(prev, initialRoute) ? prev : initialRoute));
   }, [initialRoute]);
-
+  const [err, setErr] = useState<unknown>(null);
   const routeRef = useRef(route);
   useEffect(() => {
     routeRef.current = route;
@@ -877,20 +880,19 @@ const InnerRouter = ({
 
   const [routeChangeEvents, emitRouteChangeEvent] =
     routeChangeListenersRef.current;
-  const [err, setErr] = useState<unknown>(null);
   // FIXME this "refetching" hack doesn't seem ideal.
   const refetching = useRef<[onFinish?: () => void] | null>(null);
   const changeRoute: ChangeRoute = useCallback(
-    async (route, options) => {
-      requestedRouteRef.current = route;
-      emitRouteChangeEvent('start', route);
+    async (nextRoute, options) => {
+      requestedRouteRef.current = nextRoute;
+      emitRouteChangeEvent('start', nextRoute);
       const startTransitionFn =
         options.unstable_startTransition || ((fn: TransitionFunction) => fn());
       const { skipRefetch, mode, url, unstable_historyOnError } = options;
       const routeBeforeChange = routeRef.current;
       const historyPathnameBeforeChange = window.location.pathname;
-      const urlToWrite = mode && (url || getRouteUrl(route));
-      const newPath = route.path !== routeBeforeChange.path;
+      const urlToWrite = mode && (url || getRouteUrl(nextRoute));
+      const pathChanged = isPathChange(nextRoute, routeBeforeChange);
       const writeHistoryIfNeeded = () => {
         if (
           mode &&
@@ -906,9 +908,9 @@ const InnerRouter = ({
       };
       refetching.current = [];
       setErr(null);
-      if (!staticPathSetRef.current.has(route.path) && !skipRefetch) {
-        const rscPath = encodeRoutePath(route.path);
-        const rscParams = createRscParams(route.query);
+      if (!staticPathSetRef.current.has(nextRoute.path) && !skipRefetch) {
+        const rscPath = encodeRoutePath(nextRoute.path);
+        const rscParams = createRscParams(nextRoute.query);
         try {
           await refetch(rscPath, rscParams);
         } catch (e) {
@@ -920,16 +922,16 @@ const InnerRouter = ({
           throw e;
         }
       }
-      const scrollBehavior: ScrollBehavior = newPath ? 'instant' : 'auto';
+      const scrollBehavior: ScrollBehavior = pathChanged ? 'instant' : 'auto';
       startTransitionFn(() => {
         writeHistoryIfNeeded();
-        setRoute(route);
+        setRoute(nextRoute);
         if (options.shouldScroll) {
-          scrollToRoute(route, scrollBehavior, newPath);
+          scrollToRoute(nextRoute, scrollBehavior, pathChanged);
         }
         refetching.current?.[0]?.();
         refetching.current = null;
-        emitRouteChangeEvent('complete', route);
+        emitRouteChangeEvent('complete', nextRoute);
       });
     },
     [emitRouteChangeEvent, refetch],
@@ -949,14 +951,16 @@ const InnerRouter = ({
 
   useEffect(() => {
     const callback = () => {
-      const route = routeInterceptor(parseRoute(new URL(window.location.href)));
-      if (!route) {
+      const nextRoute = routeInterceptor(
+        parseRoute(new URL(window.location.href)),
+      );
+      if (!nextRoute) {
         return;
       }
-      const shouldScroll =
-        route.path !== routeRef.current.path ||
-        route.hash !== routeRef.current.hash;
-      changeRoute(route, { shouldScroll }).catch((err) => {
+      changeRoute(nextRoute, {
+        shouldScroll: shouldScrollForRouteChange(nextRoute, routeRef.current),
+        skipRefetch: isSameRoute(nextRoute, routeRef.current),
+      }).catch((err) => {
         console.log('Error while navigating back:', err);
       });
     };
@@ -1015,7 +1019,7 @@ const InnerRouter = ({
         changeRoute,
         prefetchRoute,
         routeChangeEvents,
-        fetchingSlices: useRef(new Set<SliceId>()).current,
+        fetchingSlices: fetchingSlicesRef.current,
       }}
     >
       {rootElement}
