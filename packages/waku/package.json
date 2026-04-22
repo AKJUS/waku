@@ -98,7 +98,7 @@
     "magic-string": "^0.30.21",
     "picocolors": "^1.1.1",
     "rsc-html-stream": "^0.0.7",
-    "vite": "^8.0.0"
+    "vite": "^8.0.5"
   },
   "devDependencies": {
     "@swc/cli": "^0.8.1",
