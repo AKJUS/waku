@@ -1474,10 +1474,9 @@ For advanced users who want to avoid deploying functions, use the server entry f
 import { fsRouter } from 'waku';
 import adapter from 'waku/adapters/vercel';
 
-export default adapter(
-  fsRouter(import.meta.glob('./**/*.{tsx,ts}', { base: './pages' })),
-  { static: true },
-);
+export default adapter(fsRouter(import.meta.glob('./pages/**/*.{tsx,ts}')), {
+  static: true,
+});
 ```
 
 ### Netlify
@@ -1499,10 +1498,9 @@ For advanced users who want to avoid deploying functions, use the server entry f
 import { fsRouter } from 'waku';
 import adapter from 'waku/adapters/netlify';
 
-export default adapter(
-  fsRouter(import.meta.glob('./**/*.{tsx,ts}', { base: './pages' })),
-  { static: true },
-);
+export default adapter(fsRouter(import.meta.glob('./pages/**/*.{tsx,ts}')), {
+  static: true,
+});
 ```
 
 ### Cloudflare Workers
@@ -1522,10 +1520,9 @@ wrangler deploy
 import { fsRouter } from 'waku';
 import adapter from 'waku/adapters/cloudflare';
 
-export default adapter(
-  fsRouter(import.meta.glob('./**/*.{tsx,ts}', { base: './pages' })),
-  { static: true },
-);
+export default adapter(fsRouter(import.meta.glob('./pages/**/*.{tsx,ts}')), {
+  static: true,
+});
 ```
 
 ### Deno Deploy (experimental)
@@ -1536,9 +1533,7 @@ export default adapter(
 import { fsRouter } from 'waku';
 import adapter from 'waku/adapters/deno';
 
-export default adapter(
-  fsRouter(import.meta.glob('./**/*.{tsx,ts}', { base: './pages' })),
-);
+export default adapter(fsRouter(import.meta.glob('./pages/**/*.{tsx,ts}')));
 ```
 
 ```sh
@@ -1554,9 +1549,7 @@ deployctl deploy --prod dist/serve-deno.js --exclude node_modules
 import { fsRouter } from 'waku';
 import adapter from 'waku/adapters/bun';
 
-export default adapter(
-  fsRouter(import.meta.glob('./**/*.{tsx,ts}', { base: './pages' })),
-);
+export default adapter(fsRouter(import.meta.glob('./pages/**/*.{tsx,ts}')));
 ```
 
 ```sh
@@ -1572,7 +1565,7 @@ import { fsRouter } from 'waku';
 import adapter from 'waku/adapters/aws-lambda';
 
 export default adapter(
-  fsRouter(import.meta.glob('./**/*.{tsx,ts}', { base: './pages' })),
+  fsRouter(import.meta.glob('./pages/**/*.{tsx,ts}')),
   { streaming: false }, // optional, default is false
 );
 ```
