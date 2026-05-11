@@ -28,6 +28,7 @@ export function createRenderUtils(
   loadSsrEntryModule: () => Promise<
     typeof import('../vite-entries/entry.ssr.js')
   >,
+  buildId: string,
   debugChannel?: { readable?: ReadableStream; writable?: WritableStream },
   debugId?: string,
 ): {
@@ -50,10 +51,12 @@ export function createRenderUtils(
   return {
     async renderRsc(elements, options) {
       validateRscElementIds(elements);
-      const data =
-        options && 'value' in options
-          ? { ...elements, _value: options.value }
-          : elements;
+      const data: Record<string, unknown> = buildId
+        ? { ...elements, _buildId: buildId }
+        : { ...elements };
+      if (options && 'value' in options) {
+        data._value = options.value;
+      }
       return renderToReadableStream(
         data,
         {
