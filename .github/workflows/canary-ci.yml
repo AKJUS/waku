@@ -9,7 +9,10 @@ permissions:
 
 jobs:
   parse-version:
-    if: ${{ github.event.issue.pull_request && startsWith(github.event.comment.body, '/canary-ci run') }}
+    if: |
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/canary-ci run') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
     outputs:
       react_version: ${{ steps.get-version.outputs.react_version }}
@@ -21,7 +24,7 @@ jobs:
         run: |
           comment="$COMMENT_BODY"
           # Extract version after '/canary-ci run', defaulting to 'canary' if not specified
-          version=$(echo "$comment" | sed -n 's/^\/canary-ci run\s*\(\S*\).*/\1/p')
+          version=$(echo "$comment" | sed -n 's/^\/canary-ci run\s*\([A-Za-z0-9._@/+-]*\).*/\1/p')
           if [ -z "$version" ]; then
             version="canary"
           fi
